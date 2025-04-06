@@ -9,9 +9,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
     <!-- API key will be injected by GitHub Actions -->
-    <script>
-        window.GOOGLE_MAPS_API_KEY = ""; // Placeholder for replacement
-    </script>
+<script>
+  // Will be replaced by GitHub Actions
+  window.CONFIG = {
+    GOOGLE_MAPS_API_KEY: "__GOOGLE_MAPS_API_KEY__"
+  };
+</script>
     <style>
         .map-container { height: 400px; width: 100%; }
         .street-view-container { height: 350px; width: 100%; }
