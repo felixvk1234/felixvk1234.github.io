@@ -12,7 +12,7 @@
 <script>
   // Will be replaced by GitHub Actions
   window.CONFIG = {
-    GOOGLE_MAPS_API_KEY: "__GOOGLE_MAPS_API_KEY__"
+    GOOGLE_MAPS_API_KEY: "AIzaSyB0n514E8KWb8i69QVQhovjXFynwmCTEkA"
   };
 </script>
     <style>
@@ -37,7 +37,7 @@
 const loadGoogleMapsApi = (callback) => {
   const apiKey = window.CONFIG.GOOGLE_MAPS_API_KEY;
   
-  if (!apiKey || apiKey === "__GOOGLE_MAPS_API_KEY__") {
+  if (!apiKey || apiKey === "AIzaSyB0n514E8KWb8i69QVQhovjXFynwmCTEkA") {
     console.error("API key not properly configured");
     return;
   }
@@ -145,7 +145,7 @@ const loadGoogleMapsApi = (callback) => {
 
             const getRandomLocationInCity = async (city) => {
                 try {
-                    if (!window.GOOGLE_MAPS_API_KEY || window.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
+                    if (!window.GOOGLE_MAPS_API_KEY || window.GOOGLE_MAPS_API_KEY === "AIzaSyB0n514E8KWb8i69QVQhovjXFynwmCTEkA") {
                         setError("API key not properly configured");
                         return null;
                     }
