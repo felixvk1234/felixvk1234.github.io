@@ -34,17 +34,19 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        const loadGoogleMapsApi = (callback) => {
-            const apiKey = 'AIzaSyB0n514E8KWb8i69QVQhovjXFynwmCTEkA'; // Placeholder for replacement
-            if (!apiKey) {
-                console.error("API key not configured");
-                return;
-            }
-            const script = document.createElement('script');
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
-            script.onload = callback;
-            document.head.appendChild(script);
-        };
+const loadGoogleMapsApi = (callback) => {
+  const apiKey = window.CONFIG.GOOGLE_MAPS_API_KEY;
+  
+  if (!apiKey || apiKey === "__GOOGLE_MAPS_API_KEY__") {
+    console.error("API key not properly configured");
+    return;
+  }
+
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+  script.onload = callback;
+  document.head.appendChild(script);
+};
 
         const CityGuesser = () => {
             const [cityInput, setCityInput] = useState("");
