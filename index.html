@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Guesser Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.20/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <!-- API key will be injected by GitHub Actions -->
+    <script>
+        window.GOOGLE_MAPS_API_KEY = ""; // Placeholder for replacement
+    </script>
+    <style>
+        .map-container { height: 400px; width: 100%; }
+        .street-view-container { height: 350px; width: 100%; }
+        .street-view-img { width: 100%; height: 200px; object-fit: cover; }
+        .street-view-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .tab-button {
+            padding: 8px 16px; border: 1px solid #ddd; border-bottom: none;
+            border-radius: 4px 4px 0 0; background-color: #f1f1f1; cursor: pointer;
+        }
+        .tab-button.active { background-color: white; border-bottom: 1px solid white; margin-bottom: -1px; }
+        .tab-content { border: 1px solid #ddd; border-radius: 0 4px 4px 4px; padding: 16px; }
+    </style>
+</head>
+<body>
+    <div id="root" class="container mx-auto p-4"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const loadGoogleMapsApi = (callback) => {
+            const apiKey = ""; // Placeholder for replacement
+            if (!apiKey) {
+                console.error("API key not configured");
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+            script.onload = callback;
+            document.head.appendChild(script);
+        };
+
+        const CityGuesser = () => {
+            const [cityInput, setCityInput] = useState("");
+            const [gameStarted, setGameStarted] = useState(false);
+            const [locationData, setLocationData] = useState(null);
+            const [guessPosition, setGuessPosition] = useState(null);
+            const [distance, setDistance] = useState(null);
+            const [attempts, setAttempts] = useState(0);
+            const [isWinner, setIsWinner] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState("");
+            const [previousGuesses, setPreviousGuesses] = useState([]);
+            const [activeTab, setActiveTab] = useState("images"); // "images" or "streetview"
+            const [mapsLoaded, setMapsLoaded] = useState(false);
+            const mapRef = useRef(null);
+            const mapInstance = useRef(null);
+            const markerRef = useRef(null);
+            const actualMarkerRef = useRef(null);
+            const streetViewRef = useRef(null);
+            const streetViewPanorama = useRef(null);
+            
+            // Load Google Maps API when component mounts
+            useEffect(() => {
+                loadGoogleMapsApi(() => {
+                    setMapsLoaded(true);
+                });
+            }, []);
+
+            // Initialize map when component mounts
+            useEffect(() => {
+                if (gameStarted && mapRef.current && !mapInstance.current && locationData && mapsLoaded) {
+                    // Initialize the map at the city's location instead of default location
+                    const initialLocation = locationData.actualLocation;
+                    
+                    const map = new google.maps.Map(mapRef.current, {
+                        center: initialLocation,
+                        zoom: 12,
+                        streetViewControl: false
+                    });
+                    
+                    mapInstance.current = map;
+                    
+                    // Set up click listener for map
+                    map.addListener('click', (event) => {
+                        const clickedPosition = {
+                            lat: event.latLng.lat(),
+                            lng: event.latLng.lng()
+                        };
+                        
+                        setGuessPosition(clickedPosition);
+                        
+                        // Add or move marker for guess position
+                        if (markerRef.current) {
+                            markerRef.current.setPosition(event.latLng);
+                        } else {
+                            markerRef.current = new google.maps.Marker({
+                                position: event.latLng,
+                                map: map,
+                                icon: {
+                                    url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+                                },
+                                title: 'Your guess'
+                            });
+                        }
+                    });
+                }
+            }, [gameStarted, locationData, mapsLoaded]);
+
+            // Initialize Street View when tab changes to streetview
+            useEffect(() => {
+                if (gameStarted && activeTab === "streetview" && streetViewRef.current && locationData && !streetViewPanorama.current && mapsLoaded) {
+                    const panorama = new google.maps.StreetViewPanorama(
+                        streetViewRef.current,
+                        {
+                            position: locationData.actualLocation,
+                            pov: { heading: 0, pitch: 0 },
+                            zoom: 1,
+                            visible: true,
+                            addressControl: false
+                        }
+                    );
+                    streetViewPanorama.current = panorama;
+                }
+            }, [activeTab, gameStarted, locationData, mapsLoaded]);
+
+            // Update map center when location data changes
+            useEffect(() => {
+                if (locationData && mapInstance.current) {
+                    mapInstance.current.setCenter(locationData.actualLocation);
+                    mapInstance.current.setZoom(13);
+                    
+                    // Reset street view
+                    streetViewPanorama.current = null;
+                }
+            }, [locationData]);
+
+            const getRandomLocationInCity = async (city) => {
+                try {
+                    if (!window.GOOGLE_MAPS_API_KEY || window.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
+                        setError("API key not properly configured");
+                        return null;
+                    }
+                    
+                    // Get city information using geocoding
+                    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${window.GOOGLE_MAPS_API_KEY}`;
+                    
+                    const response = await fetch(geocodeUrl);
+                    const data = await response.json();
+                    
+                    if (data.status !== 'OK' || !data.results.length) {
+                        return null;
+                    }
+                    
+                    const result = data.results[0];
+                    const location = result.geometry.location;
+                    const formattedAddress = result.formatted_address;
+                    const viewport = result.geometry.viewport;
+                    
+                    // Generate a random location within the viewport
+                    const lat = location.lat + (Math.random() - 0.5) * 0.05;
+                    const lng = location.lng + (Math.random() - 0.5) * 0.05;
+                    
+                    // Create street view URLs for different headings (0, 90, 180, 270 degrees)
+                    const streetViewUrls = [
+                        `https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${lat},${lng}&heading=0&key=${window.GOOGLE_MAPS_API_KEY}`,
+                        `https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${lat},${lng}&heading=90&key=${window.GOOGLE_MAPS_API_KEY}`,
+                        `https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${lat},${lng}&heading=180&key=${window.GOOGLE_MAPS_API_KEY}`,
+                        `https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${lat},${lng}&heading=270&key=${window.GOOGLE_MAPS_API_KEY}`
+                    ];
+                    
+                    return {
+                        streetViewUrls,
+                        actualLocation: { lat, lng },
+                        cityName: city,
+                        formattedAddress,
+                        cityCenter: location // Store the city center coordinates
+                    };
+                } catch (err) {
+                    console.error('Error getting random location:', err);
+                    return null;
+                }
+            };
+
+            const startGame = async () => {
+                if (!cityInput) {
+                    setError('Please enter a city name');
+                    return;
+                }
+                
+                if (!mapsLoaded) {
+                    setError('Google Maps API is still loading. Please wait a moment and try again.');
+                    return;
+                }
+                
+                setLoading(true);
+                setError('');
+                
+                try {
+                    const location = await getRandomLocationInCity(cityInput);
+                    
+                    if (!location) {
+                        setError(`Couldn't find valid data for ${cityInput}`);
+                        setLoading(false);
+                        return;
+                    }
+                    
+                    setLocationData(location);
+                    setGameStarted(true);
+                    setDistance(null);
+                    setGuessPosition(null);
+                    setAttempts(0);
+                    setIsWinner(false);
+                    setPreviousGuesses([]);
+                    setActiveTab("images");
+                    
+                    // Reset markers
+                    if (markerRef.current) {
+                        markerRef.current.setMap(null);
+                        markerRef.current = null;
+                    }
+                    
+                    if (actualMarkerRef.current) {
+                        actualMarkerRef.current.setMap(null);
+                        actualMarkerRef.current = null;
+                    }
+                    
+                    // Reset the map instance when starting a new game
+                    if (mapInstance.current) {
+                        mapInstance.current = null;
+                    }
+                    
+                    // Reset street view
+                    streetViewPanorama.current = null;
+                    
+                } catch (err) {
+                    setError('Failed to start game. Please try again.');
+                    console.error(err);
+                }
+                
+                setLoading(false);
+            };
+
+            const submitGuess = () => {
+                if (!guessPosition || !locationData) return;
+                
+                const calculatedDistance = calculateDistance(
+                    guessPosition.lat, 
+                    guessPosition.lng, 
+                    locationData.actualLocation.lat, 
+                    locationData.actualLocation.lng
+                );
+                
+                setDistance(calculatedDistance);
+                setAttempts(prev => prev + 1);
+                
+                // Add to previous guesses
+                const newGuess = {
+                    position: { ...guessPosition },
+                    distance: calculatedDistance,
+                    number: previousGuesses.length + 1
+                };
+                
+                setPreviousGuesses(prev => [...prev, newGuess]);
+                
+                // Place a numbered marker for this guess
+                if (mapInstance.current) {
+                    new google.maps.Marker({
+                        position: new google.maps.LatLng(
+                            guessPosition.lat,
+                            guessPosition.lng
+                        ),
+                        map: mapInstance.current,
+                        label: String(newGuess.number),
+                        title: `Guess #${newGuess.number} - ${calculatedDistance}m away`
+                    });
+                }
+                
+                // Reset current guess marker
+                if (markerRef.current) {
+                    markerRef.current.setMap(null);
+                    markerRef.current = null;
+                }
+                
+                setGuessPosition(null);
+                
+                if (calculatedDistance <= 100) {
+                    setIsWinner(true);
+                    
+                    // Show the actual location
+                    if (mapInstance.current) {
+                        actualMarkerRef.current = new google.maps.Marker({
+                            position: new google.maps.LatLng(
+                                locationData.actualLocation.lat,
+                                locationData.actualLocation.lng
+                            ),
+                            map: mapInstance.current,
+                            icon: {
+                                url: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
+                            },
+                            title: 'Actual location'
+                        });
+                        
+                        // Draw line between last guess and actual location
+                        new google.maps.Polyline({
+                            path: [
+                                newGuess.position,
+                                locationData.actualLocation
+                            ],
+                            geodesic: true,
+                            strokeColor: '#FF0000',
+                            strokeOpacity: 1.0,
+                            strokeWeight: 2,
+                            map: mapInstance.current
+                        });
+                    }
+                }
+            };
+
+            // Calculate distance between two points using Haversine formula
+            const calculateDistance = (lat1, lon1, lat2, lon2) => {
+                const R = 6371e3; // Earth's radius in meters
+                const φ1 = lat1 * Math.PI / 180;
+                const φ2 = lat2 * Math.PI / 180;
+                const Δφ = (lat2 - lat1) * Math.PI / 180;
+                const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+                const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                        Math.cos(φ1) * Math.cos(φ2) *
+                        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+                return Math.round(R * c); // Distance in meters
+            };
+
+            const resetGame = () => {
+                setGameStarted(false);
+                setLocationData(null);
+                setGuessPosition(null);
+                setDistance(null);
+                setAttempts(0);
+                setIsWinner(false);
+                setPreviousGuesses([]);
+                setCityInput('');
+                setActiveTab("images");
+                
+                // Clean up map and markers
+                if (mapInstance.current) {
+                    mapInstance.current = null;
+                }
+                
+                if (markerRef.current) {
+                    markerRef.current.setMap(null);
+                    markerRef.current = null;
+                }
+                
+                if (actualMarkerRef.current) {
+                    actualMarkerRef.current.setMap(null);
+                    actualMarkerRef.current = null;
+                }
+                
+                // Reset street view
+                streetViewPanorama.current = null;
+            };
+
+            const playAgainSameCity = () => {
+                setLoading(true);
+                const city = locationData?.cityName || '';
+                
+                setLocationData(null);
+                setGuessPosition(null);
+                setDistance(null);
+                setAttempts(0);
+                setIsWinner(false);
+                setPreviousGuesses([]);
+                setActiveTab("images");
+                
+                // Clear all markers
+                if (mapInstance.current) {
+                    // Keep the map instance but clear markers
+                    if (markerRef.current) {
+                        markerRef.current.setMap(null);
+                        markerRef.current = null;
+                    }
+                    
+                    if (actualMarkerRef.current) {
+                        actualMarkerRef.current.setMap(null);
+                        actualMarkerRef.current = null;
+                    }
+                    
+                    // Remove all other markers (from previous guesses)
+                    mapInstance.current.data.forEach(feature => {
+                        mapInstance.current.data.remove(feature);
+                    });
+                    
+                    // Reset the map instance for a fresh start
+                    mapInstance.current = null;
+                }
+                
+                // Reset street view
+                streetViewPanorama.current = null;
+                
+                // Get a new location in the same city
+                getRandomLocationInCity(city).then(location => {
+                    if (location) {
+                        setLocationData(location);
+                    } else {
+                        setError(`Couldn't find valid data for ${city}`);
+                        setGameStarted(false);
+                    }
+                    setLoading(false);
+                });
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold mb-6 text-center">City Guesser</h1>
+                    
+                    {!mapsLoaded && (
+                        <div className="p-4 bg-yellow-100 rounded mb-4">
+                            <p className="text-center">Loading Google Maps API...</p>
+                        </div>
+                    )}
+                    
+                    {!gameStarted ? (
+                        <div className="mb-4">
+                            <div className="flex flex-col md:flex-row gap-2 mb-2">
+                                <input
+                                    type="text"
+                                    value={cityInput}
+                                    onChange={(e) => setCityInput(e.target.value)}
+                                    placeholder="Enter a city name (e.g., Paris, Tokyo, New York)"
+                                    className="border rounded p-2 flex-grow"
+                                />
+                                <button 
+                                    onClick={startGame}
+                                    disabled={loading || !mapsLoaded}
+                                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-400"
+                                >
+                                    {loading ? 'Loading...' : 'Start Game'}
+                                </button>
+                            </div>
+                            {error && <p className="text-red-500">{error}</p>}
+                            <p className="text-gray-600 mt-4">
+                                Welcome to City Guesser! Enter a city name above to start. You'll be shown Street View images
+                                from a location in that city. Click on the map to guess where the images were taken. 
+                                You win when your guess is within 100 meters of the actual location!
+                            </p>
+                            <p className="text-gray-600 mt-2">
+                                Features:
+                                <ul className="list-disc pl-6 mt-2">
+                                    <li>Four different Street View perspectives of each location</li>
+                                    <li>Interactive Street View mode where you can freely explore</li>
+                                    <li>Your previous guesses are marked on the map</li>
+                                </ul>
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    {locationData && (
+                                        <div className="rounded overflow-hidden shadow-lg">
+                                            <div className="flex border-b">
+                                                <button 
+                                                    className={`tab-button ${activeTab === "images" ? "active" : ""}`}
+                                                    onClick={() => setActiveTab("images")}
+                                                >
+                                                    Images
+                                                </button>
+                                                <button 
+                                                    className={`tab-button ${activeTab === "streetview" ? "active" : ""}`}
+                                                    onClick={() => setActiveTab("streetview")}
+                                                >
+                                                    Street View
+                                                </button>
+                                            </div>
+                                            <div className="tab-content">
+                                                {activeTab === "images" && (
+                                                    <div className="street-view-grid">
+                                                        {locationData.streetViewUrls.map((url, index) => (
+                                                            <img 
+                                                                key={index}
+                                                                src={url} 
+                                                                alt={`Street View ${index+1}`} 
+                                                                className="street-view-img"
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {activeTab === "streetview" && (
+                                                    <div 
+                                                        ref={streetViewRef} 
+                                                        className="street-view-container"
+                                                    ></div>
+                                                )}
+                                                <div className="p-4">
+                                                    <h2 className="font-bold text-xl mb-2">
+                                                        Where in {locationData.cityName} is this?
+                                                    </h2>
+                                                    <p className="text-gray-700">
+                                                        Click on the map to place your guess, then click "Submit Guess"
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <div className="map-container">
+                                    <div ref={mapRef} className="w-full h-full"></div>
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col md:flex-row gap-4 mb-4 justify-center">
+                                <button
+                                    onClick={submitGuess}
+                                    disabled={!guessPosition || isWinner}
+                                    className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:bg-gray-400"
+                                >
+                                    Submit Guess
+                                </button>
+                                
+                                {isWinner ? (
+                                    <button
+                                        onClick={playAgainSameCity}
+                                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                                    >
+                                        Play Again (Same City)
+                                    </button>
+                                ) : null}
+                                
+                                <button
+                                    onClick={resetGame}
+                                    className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                                >
+                                    New City
+                                </button>
+                            </div>
+                            
+                            <div className="mt-4">
+                                {distance !== null && (
+                                    <div className={`p-4 rounded ${isWinner ? 'bg-green-100' : 'bg-yellow-100'}`}>
+                                        <p className="font-bold text-center">
+                                            {isWinner 
+                                                ? `Congratulations! You found the location within ${distance}m!` 
+                                                : `Your guess was ${distance}m away from the actual location.`}
+                                        </p>
+                                        <p className="text-center">Number of attempts: {attempts}</p>
+                                        {isWinner && (
+                                            <p className="mt-2 text-center">
+                                                The actual location was: {locationData?.formattedAddress}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {previousGuesses.length > 0 && (
+                                <div className="mt-4">
+                                    <h3 className="font-bold text-xl mb-2">Previous Guesses</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full border-collapse border">
+                                            <thead>
+                                                <tr className="bg-gray-100">
+                                                    <th className="border p-2">#</th>
+                                                    <th className="border p-2">Distance</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {previousGuesses.map((guess, index) => (
+                                                    <tr key={index} className="border">
+                                                        <td className="border p-2 text-center">{guess.number}</td>
+                                                        <td className="border p-2 text-center">{guess.distance}m</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<CityGuesser />, document.getElementById('root'));
+    </script>
+</body>
+</html>
