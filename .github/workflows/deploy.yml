@@ -1,5 +1,6 @@
 # .github/workflows/deploy.yml
 name: Build and Deploy
+
 on:
   push:
     branches:
@@ -9,15 +10,20 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
+      # Checkout code from the main branch
       - name: Checkout
         uses: actions/checkout@v3
 
+      # Replace placeholder with the actual API key from GitHub Secrets
       - name: Replace API Key
         run: |
           sed -i "s/__GOOGLE_MAPS_API_KEY__/${{ secrets.GOOGLE_MAPS_API_KEY }}/g" index.html
 
+      # Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
-          folder: .
+          folder: .  # Specify the folder to deploy (in this case, the root directory)
+          token: ${{ secrets.GH_TOKEN }}  # Use the GitHub token stored in secrets
+
