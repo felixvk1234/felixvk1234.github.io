@@ -7,11 +7,16 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:  # Add this block to grant write access
+      contents: write
+      pages: write
+      id-token: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Inject API key
+      - name: Inject API Key
         run: |
           sed -i "s/window.GOOGLE_MAPS_API_KEY = \"\"/window.GOOGLE_MAPS_API_KEY = '${{ secrets.GOOGLE_MAPS_API_KEY }}'/g" index.html
           sed -i "s/const apiKey = \"\"/const apiKey = '${{ secrets.GOOGLE_MAPS_API_KEY }}'/g" index.html
@@ -19,5 +24,5 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}  # GitHub auto-provides this
           publish_dir: ./
